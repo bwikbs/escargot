@@ -27,7 +27,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#if defined(__x86_64__)
+#if defined(__x86_64__) || defined(ESCARGOT_64)
 #define LIMB_LOG2_BITS 6
 #else
 #define LIMB_LOG2_BITS 5
