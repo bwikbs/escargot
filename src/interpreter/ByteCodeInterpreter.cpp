@@ -2689,7 +2689,6 @@ ALWAYS_INLINE void InterpreterSlowPath::setObjectPreComputedCaseOperation(Execut
 NEVER_INLINE bool InterpreterSlowPath::setObjectPreComputedCaseOperationSlowCase(ExecutionState& state, Object* originalObject, const Value& willBeObject, const Value& value, SetObjectPreComputedCase* code, ByteCodeBlock* block)
 {
     ASSERT(code->m_inlineCacheProtoTraverseMaxIndex > 0);
-    ASSERT(code->m_inlineCacheProtoTraverseMaxIndex < SetObjectPreComputedCase::inlineCacheProtoTraverseMaxCount);
 
     // m_inlineCacheProtoTraverseMaxIndex is a 8-bit field (0..255) set
     // via `std::max(chain.size() - 1, current)` during cache fill (see
