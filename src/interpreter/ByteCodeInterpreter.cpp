@@ -2704,6 +2704,29 @@ NEVER_INLINE bool InterpreterSlowPath::setObjectPreComputedCaseOperationSlowCase
 
 NEVER_INLINE void InterpreterSlowPath::setObjectPreComputedCaseOperationCacheMiss(ExecutionState& state, Object* originalObject, const Value& willBeObject, const Value& value, SetObjectPreComputedCase* code, ByteCodeBlock* block)
 {
+    // Defensive bounds check: under heavy YouTube load (m.youtube.com),
+    // we observed `code` pointing to a GC heap address (e.g. 0xa08a0)
+    // far outside this block's m_code buffer (0x7fffb09eb6d0..). That
+    // means a Jump-style opcode or programCounter assignment landed
+    // outside the block — reading the bytes as if they were a
+    // SetObjectPreComputedCase corrupts m_propertyName.m_data and
+    // SEGVs deep in Escargot::isIndexString. Bail out as an
+    // uncatchable TypeError so the crash is visible-but-recoverable
+    // instead of a SIGSEGV in release builds.
+    {
+        const uint8_t* bufBegin = block->m_code.data();
+        const uint8_t* bufEnd = bufBegin + block->m_code.size();
+        const uint8_t* codePtr = reinterpret_cast<const uint8_t*>(code);
+        if (UNLIKELY(codePtr < bufBegin || codePtr >= bufEnd)) {
+            ErrorObject::throwBuiltinError(
+                state, ErrorCode::TypeError, String::emptyString(),
+                false, String::emptyString(),
+                "internal: bytecode programCounter out of range "
+                "in setObjectPreComputedCaseOperationCacheMiss");
+            return;
+        }
+    }
+
     if (code->m_isLength && originalObject->isArrayObject()) {
         if (LIKELY(originalObject->asArrayObject()->isFastModeArray())) {
             if (!originalObject->asArrayObject()->setArrayLength(state, value) && state.inStrictMode()) {
