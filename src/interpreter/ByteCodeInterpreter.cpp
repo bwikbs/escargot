@@ -2398,7 +2398,17 @@ NEVER_INLINE void InterpreterSlowPath::getObjectPrecomputedCaseOperation(Executi
         orgObj = fastToObject(state, receiver);
     }
 
-    if (code->m_inlineCacheMode == GetObjectPreComputedCase::Complex) {
+    // Same stack-array overflow guard as in setObjectPreComputedCase's
+    // slow case: when m_inlineCacheProtoTraverseMaxIndex >=
+    // inlineCacheProtoTraverseMaxCount, the loop below overruns the
+    // 12-element stack arrays. Skip the complex-cache lookup in that
+    // case; the cache-miss tail of this function will handle the
+    // get correctly.
+    if (code->m_inlineCacheMode == GetObjectPreComputedCase::Complex &&
+        UNLIKELY(code->m_inlineCacheProtoTraverseMaxIndex >=
+                 GetObjectPreComputedCase::inlineCacheProtoTraverseMaxCount)) {
+        // fall through to cache-miss tail below
+    } else if (code->m_inlineCacheMode == GetObjectPreComputedCase::Complex) {
         Object* obj = orgObj;
         GetObjectInlineCacheComplexCaseData* const inlineCache = code->m_complexInlineCache;
         const size_t cacheFillCount = inlineCache->m_cache.size();
@@ -2680,6 +2690,27 @@ NEVER_INLINE bool InterpreterSlowPath::setObjectPreComputedCaseOperationSlowCase
 {
     ASSERT(code->m_inlineCacheProtoTraverseMaxIndex > 0);
     ASSERT(code->m_inlineCacheProtoTraverseMaxIndex < SetObjectPreComputedCase::inlineCacheProtoTraverseMaxCount);
+
+    // m_inlineCacheProtoTraverseMaxIndex is a 8-bit field (0..255) set
+    // via `std::max(chain.size() - 1, current)` during cache fill (see
+    // line ~3075). The cache fill uses a VectorWithInlineStorage which
+    // can grow beyond its inline capacity, so chain.size() is not
+    // structurally bounded by inlineCacheProtoTraverseMaxCount (= 12).
+    // When that happens, the loop below writes objChain[i] /
+    // objStructures[i] for i > 11 — past the end of the 12-element
+    // stack arrays — and corrupts the caller's stack frame, including
+    // the `code` parameter that's still live in
+    // setObjectPreComputedCaseOperation. The result is the YouTube
+    // home-page SEGV at `Escargot::isIndexString(str=0x7ef20)` we
+    // traced over multiple sessions: the corrupted `code` is then
+    // dereferenced in the cache-miss path with garbage bytes acting
+    // as bytecode arguments. Reproduces ~thousands of times per
+    // m.youtube.com load.
+    // Bail out to the cache-miss path before the overflow can happen.
+    if (UNLIKELY(code->m_inlineCacheProtoTraverseMaxIndex >=
+                 SetObjectPreComputedCase::inlineCacheProtoTraverseMaxCount)) {
+        return false;
+    }
 
     Object* obj = originalObject;
     Object* objChain[SetObjectPreComputedCase::inlineCacheProtoTraverseMaxCount];
