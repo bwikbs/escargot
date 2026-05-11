@@ -2366,6 +2366,26 @@ NEVER_INLINE bool InterpreterSlowPath::abstractLeftIsLessThanEqualRightSlowCase(
 
 NEVER_INLINE void InterpreterSlowPath::getObjectPrecomputedCaseOperation(ExecutionState& state, GetObjectPreComputedCase* code, Value* registerFile, ByteCodeBlock* block)
 {
+    // Same defensive bounds check as setObjectPreComputedCaseOperationCacheMiss
+    // (see comment there). The programCounter-out-of-buffer pattern that
+    // manifests on m.youtube.com under heavy GC load can drive any slow
+    // path whose dispatched opcode happens to have a valid label at
+    // offset 0 of the wrong memory. Get and Set property are by far the
+    // most common opcodes so they're the most likely to trip first.
+    {
+        const uint8_t* bufBegin = block->m_code.data();
+        const uint8_t* bufEnd = bufBegin + block->m_code.size();
+        const uint8_t* codePtr = reinterpret_cast<const uint8_t*>(code);
+        if (UNLIKELY(codePtr < bufBegin || codePtr >= bufEnd)) {
+            ErrorObject::throwBuiltinError(
+                state, ErrorCode::TypeError, String::emptyString(),
+                false, String::emptyString(),
+                "internal: bytecode programCounter out of range "
+                "in getObjectPrecomputedCaseOperation");
+            return;
+        }
+    }
+
     const Value& receiver = registerFile[code->m_objectRegisterIndex];
     Object* orgObj;
     if (LIKELY(receiver.isObject())) {
