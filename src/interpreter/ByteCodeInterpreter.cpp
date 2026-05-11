@@ -2377,6 +2377,10 @@ NEVER_INLINE void InterpreterSlowPath::getObjectPrecomputedCaseOperation(Executi
         const uint8_t* bufEnd = bufBegin + block->m_code.size();
         const uint8_t* codePtr = reinterpret_cast<const uint8_t*>(code);
         if (UNLIKELY(codePtr < bufBegin || codePtr >= bufEnd)) {
+            ESCARGOT_LOG_ERROR(
+                "[escargot] getObjectPreComputedCase code(%p) outside "
+                "block buffer [%p,%p)\n",
+                (void*)code, (void*)bufBegin, (void*)bufEnd);
             ErrorObject::throwBuiltinError(
                 state, ErrorCode::TypeError, String::emptyString(),
                 false, String::emptyString(),
@@ -2738,6 +2742,14 @@ NEVER_INLINE void InterpreterSlowPath::setObjectPreComputedCaseOperationCacheMis
         const uint8_t* bufEnd = bufBegin + block->m_code.size();
         const uint8_t* codePtr = reinterpret_cast<const uint8_t*>(code);
         if (UNLIKELY(codePtr < bufBegin || codePtr >= bufEnd)) {
+            // Loud stderr log so the bug is observable in device/release
+            // logs regardless of whether surrounding JS swallows the
+            // TypeError. Includes both pointers so we can correlate which
+            // pair drifted.
+            ESCARGOT_LOG_ERROR(
+                "[escargot] setObjectPreComputedCase code(%p) outside "
+                "block buffer [%p,%p)\n",
+                (void*)code, (void*)bufBegin, (void*)bufEnd);
             ErrorObject::throwBuiltinError(
                 state, ErrorCode::TypeError, String::emptyString(),
                 false, String::emptyString(),
