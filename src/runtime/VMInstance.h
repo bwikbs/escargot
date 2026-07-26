@@ -132,6 +132,12 @@ public:
     }
 
     void enterIdleMode();
+    // Drops every compiled ByteCodeBlock, including the ones of top level code
+    // blocks that enterIdleMode() leaves to the Script class. Only safe when
+    // this VM is about to be discarded: a ByteCodeBlock is allocated through
+    // GC_finalized_malloc, and that kind is marked unconditionally, so each
+    // one keeps its Context (and everything the Context reaches) alive.
+    void releaseAllByteCodeBlocks();
     void clearCachesRelatedWithContext();
 
     const GlobalSymbols& globalSymbols()
