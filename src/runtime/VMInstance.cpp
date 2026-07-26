@@ -757,6 +757,16 @@ void VMInstance::clearCachesRelatedWithContext()
     }
 }
 
+void VMInstance::releaseAllByteCodeBlocks()
+{
+    auto& v = compiledByteCodeBlocks();
+    for (size_t i = 0; i < v.size(); i++) {
+        v[i]->m_codeBlock->setByteCodeBlock(nullptr);
+    }
+    compiledByteCodeSize() = 0;
+    GC_gcollect();
+}
+
 void VMInstance::enterIdleMode()
 {
     m_inIdleMode = true;
