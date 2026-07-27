@@ -30,16 +30,14 @@
 
 namespace Escargot {
 
-static void intlDisplayNamesClear(void* obj, void* cd)
-{
-    IntlDisplayNamesObject* self = reinterpret_cast<IntlDisplayNamesObject*>(obj);
-    self->clearNativeResources();
-}
-
 void* IntlDisplayNamesObject::operator new(size_t size)
 {
-    constexpr static GC_finalizer_closure data = { intlDisplayNamesClear, nullptr };
-    return GC_finalized_malloc(size, &data);
+    // Allocating from the finalized kind would turn every instance into a GC
+    // root - that kind is marked unconditionally - which keeps the object's
+    // prototype chain, and through it the whole Context, reachable long after
+    // the page that created it is gone. A regular finalizer releases the
+    // native resources without pinning anything.
+    return GC_MALLOC(size);
 }
 
 void IntlDisplayNamesObject::clearNativeResources()
@@ -58,6 +56,10 @@ IntlDisplayNamesObject::IntlDisplayNamesObject(ExecutionState& state, Object* pr
     , m_languageDisplay(nullptr)
     , m_icuLocaleDisplayNames(nullptr)
 {
+    addFinalizer([](PointerValue* self, void* data) {
+        static_cast<IntlDisplayNamesObject*>(self->asObject())->clearNativeResources();
+    },
+                 nullptr);
 #if defined(ENABLE_RUNTIME_ICU_BINDER)
     UVersionInfo versionArray;
     u_getVersion(versionArray);

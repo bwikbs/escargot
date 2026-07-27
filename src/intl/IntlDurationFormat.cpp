@@ -63,16 +63,14 @@
 
 namespace Escargot {
 
-static void intlDurationFormatClear(void* obj, void* cd)
-{
-    IntlDurationFormatObject* self = reinterpret_cast<IntlDurationFormatObject*>(obj);
-    self->clearNativeResources();
-}
-
 void* IntlDurationFormatObject::operator new(size_t size)
 {
-    constexpr static GC_finalizer_closure data = { intlDurationFormatClear, nullptr };
-    return GC_finalized_malloc(size, &data);
+    // Allocating from the finalized kind would turn every instance into a GC
+    // root - that kind is marked unconditionally - which keeps the object's
+    // prototype chain, and through it the whole Context, reachable long after
+    // the page that created it is gone. A regular finalizer releases the
+    // native resources without pinning anything.
+    return GC_MALLOC(size);
 }
 
 void IntlDurationFormatObject::clearNativeResources()
@@ -179,6 +177,10 @@ static std::pair<String*, String*> getDurationUnitOptions(ExecutionState& state,
 IntlDurationFormatObject::IntlDurationFormatObject(ExecutionState& state, Object* proto, Value locales, Value optionsInput)
     : DerivedObject(state, proto)
 {
+    addFinalizer([](PointerValue* self, void* data) {
+        static_cast<IntlDurationFormatObject*>(self->asObject())->clearNativeResources();
+    },
+                 nullptr);
 #if defined(ENABLE_RUNTIME_ICU_BINDER)
     UVersionInfo versionArray;
     u_getVersion(versionArray);
