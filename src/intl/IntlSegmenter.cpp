@@ -29,16 +29,14 @@
 
 namespace Escargot {
 
-static void intlSegmenterClear(void* obj, void* cd)
-{
-    IntlSegmenterObject* self = reinterpret_cast<IntlSegmenterObject*>(obj);
-    self->clearNativeResources();
-}
-
 void* IntlSegmenterObject::operator new(size_t size)
 {
-    constexpr static GC_finalizer_closure data = { intlSegmenterClear, nullptr };
-    return GC_finalized_malloc(size, &data);
+    // Allocating from the finalized kind would turn every instance into a GC
+    // root - that kind is marked unconditionally - which keeps the object's
+    // prototype chain, and through it the whole Context, reachable long after
+    // the page that created it is gone. A regular finalizer releases the
+    // native resources without pinning anything.
+    return GC_MALLOC(size);
 }
 
 void IntlSegmenterObject::clearNativeResources()
@@ -56,6 +54,10 @@ IntlSegmenterObject::IntlSegmenterObject(ExecutionState& state, Value locales, V
 IntlSegmenterObject::IntlSegmenterObject(ExecutionState& state, Object* proto, Value locales, Value optionsInput)
     : DerivedObject(state, proto)
 {
+    addFinalizer([](PointerValue* self, void* data) {
+        static_cast<IntlSegmenterObject*>(self->asObject())->clearNativeResources();
+    },
+                 nullptr);
 #if defined(ENABLE_RUNTIME_ICU_BINDER)
     UVersionInfo versionArray;
     u_getVersion(versionArray);
