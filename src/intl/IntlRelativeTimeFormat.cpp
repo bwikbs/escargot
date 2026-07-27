@@ -32,16 +32,14 @@
 
 namespace Escargot {
 
-static void intlRelativeTimeFormatClear(void* obj, void* cd)
-{
-    IntlRelativeTimeFormatObject* self = reinterpret_cast<IntlRelativeTimeFormatObject*>(obj);
-    self->clearNativeResources();
-}
-
 void* IntlRelativeTimeFormatObject::operator new(size_t size)
 {
-    constexpr static GC_finalizer_closure data = { intlRelativeTimeFormatClear, nullptr };
-    return GC_finalized_malloc(size, &data);
+    // Allocating from the finalized kind would turn every instance into a GC
+    // root - that kind is marked unconditionally - which keeps the object's
+    // prototype chain, and through it the whole Context, reachable long after
+    // the page that created it is gone. A regular finalizer releases the
+    // native resources without pinning anything.
+    return GC_MALLOC(size);
 }
 
 void IntlRelativeTimeFormatObject::clearNativeResources()
@@ -85,6 +83,10 @@ IntlRelativeTimeFormatObject::IntlRelativeTimeFormatObject(ExecutionState& state
     , m_numeric(nullptr)
     , m_icuRelativeDateTimeFormatter(nullptr)
 {
+    addFinalizer([](PointerValue* self, void* data) {
+        static_cast<IntlRelativeTimeFormatObject*>(self->asObject())->clearNativeResources();
+    },
+                 nullptr);
 #if defined(ENABLE_RUNTIME_ICU_BINDER)
     UVersionInfo versionArray;
     u_getVersion(versionArray);

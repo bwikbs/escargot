@@ -33,16 +33,14 @@
 
 namespace Escargot {
 
-static void intlListFormatClear(void* obj, void* cd)
-{
-    IntlListFormatObject* self = reinterpret_cast<IntlListFormatObject*>(obj);
-    self->clearNativeResources();
-}
-
 void* IntlListFormatObject::operator new(size_t size)
 {
-    constexpr static GC_finalizer_closure data = { intlListFormatClear, nullptr };
-    return GC_finalized_malloc(size, &data);
+    // Allocating from the finalized kind would turn every instance into a GC
+    // root - that kind is marked unconditionally - which keeps the object's
+    // prototype chain, and through it the whole Context, reachable long after
+    // the page that created it is gone. A regular finalizer releases the
+    // native resources without pinning anything.
+    return GC_MALLOC(size);
 }
 
 void IntlListFormatObject::clearNativeResources()
@@ -59,6 +57,10 @@ IntlListFormatObject::IntlListFormatObject(ExecutionState& state, Object* proto,
     , m_style(nullptr)
     , m_icuListFormatter(nullptr)
 {
+    addFinalizer([](PointerValue* self, void* data) {
+        static_cast<IntlListFormatObject*>(self->asObject())->clearNativeResources();
+    },
+                 nullptr);
     // https://tc39.es/ecma402/#sec-Intl.ListFormat
 #if defined(ENABLE_RUNTIME_ICU_BINDER)
     UVersionInfo versionArray;
