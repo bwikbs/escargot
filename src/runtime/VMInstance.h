@@ -134,9 +134,10 @@ public:
     void enterIdleMode();
     // Drops every compiled ByteCodeBlock, including the ones of top level code
     // blocks that enterIdleMode() leaves to the Script class. Only safe when
-    // this VM is about to be discarded: a ByteCodeBlock is allocated through
-    // GC_finalized_malloc, and that kind is marked unconditionally, so each
-    // one keeps its Context (and everything the Context reaches) alive.
+    // this VM is about to be discarded: ByteCodeBlockKind is registered with
+    // GC_register_disclaim_proc(..., mark_from_all = 1), so every block is
+    // marked whether or not anything references it and keeps its Context (and
+    // everything the Context reaches) alive.
     void releaseAllByteCodeBlocks();
     void clearCachesRelatedWithContext();
 
