@@ -1494,6 +1494,11 @@ void VMInstanceRef::enterIdleMode()
     toImpl(this)->enterIdleMode();
 }
 
+void VMInstanceRef::releaseAllByteCodeBlocks()
+{
+    toImpl(this)->releaseAllByteCodeBlocks();
+}
+
 void VMInstanceRef::clearCachesRelatedWithContext()
 {
     toImpl(this)->clearCachesRelatedWithContext();

@@ -753,6 +753,24 @@ void VMInstance::clearCachesRelatedWithContext()
     }
 }
 
+void VMInstance::releaseAllByteCodeBlocks()
+{
+    std::vector<ByteCodeBlock*> blocks;
+    iterateSpecificKindOfObject(HeapObjectKind::ByteCodeBlockKind,
+                                [&blocks](void* obj) {
+                                    blocks.push_back((ByteCodeBlock*)obj);
+                                });
+
+    for (size_t i = 0; i < blocks.size(); i++) {
+        InterpretedCodeBlock* codeBlock = blocks[i]->codeBlock();
+        if (codeBlock && codeBlock->byteCodeBlock() == blocks[i]) {
+            codeBlock->setByteCodeBlock(nullptr);
+        }
+    }
+
+    GC_gcollect();
+}
+
 void VMInstance::enterIdleMode()
 {
     m_inIdleMode = true;
