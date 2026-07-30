@@ -743,6 +743,11 @@ void VMInstance::clearCachesRelatedWithContext()
 {
     m_regexpCache->clear();
     globalSymbolRegistry().clear();
+    // These two outlive every Context created in this VM, so anything they
+    // still hold keeps that Context - and, for an embedder, the document that
+    // owns it - reachable for the rest of the VM's life.
+    m_cachedUTC = nullptr;
+    m_rootedObjectStructure.clear();
 #if defined(ENABLE_CODE_CACHE)
     // CodeCache should be cleared here because CodeCache holds a lock of cache directory
     // this lock should be released immediately (destructor may be called later)
@@ -762,10 +767,14 @@ void VMInstance::releaseAllByteCodeBlocks()
                                 });
 
     for (size_t i = 0; i < blocks.size(); i++) {
+        // the heap walk sees the blocks of every VMInstance of this thread, so
+        // only touch the ones this instance owns - detaching a block of another
+        // (live) instance would destroy code that is still in use
         InterpretedCodeBlock* codeBlock = blocks[i]->codeBlock();
-        if (codeBlock && codeBlock->byteCodeBlock() == blocks[i]) {
-            codeBlock->setByteCodeBlock(nullptr);
+        if (!codeBlock || codeBlock->context()->vmInstance() != this) {
+            continue;
         }
+        blocks[i]->detachFromCodeBlock();
     }
 
     GC_gcollect();
