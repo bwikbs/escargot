@@ -39,8 +39,18 @@
 #include <type_traits>
 #include <utility>
 
+#include <cstring>
+
 #include "robin_vector.h"
 #include "robin_growth_policy.h"
+
+namespace GCUtil {
+// Forward declaration of GCutil's allocator (see GCutil include/Allocator.h).
+// Buckets allocated with it live on the conservatively scanned GC heap; see
+// is_gc_scanned_allocator below.
+template <class GC_Tp>
+class gc_malloc_allocator;
+} // namespace GCUtil
 
 namespace tsl {
 
@@ -49,6 +59,20 @@ namespace detail_robin_hash {
 template <typename T>
 struct make_void {
     using type = void;
+};
+
+/**
+ * True when the bucket array is allocated on a heap that a conservative
+ * garbage collector scans word by word for pointers (GCutil's
+ * gc_malloc_allocator). Such tables must not embed truncated hashes in their
+ * buckets - see STORE_HASH in robin_hash.
+ */
+template <class Allocator>
+struct is_gc_scanned_allocator : std::false_type {
+};
+
+template <class T>
+struct is_gc_scanned_allocator<GCUtil::gc_malloc_allocator<T>> : std::true_type {
 };
 
 template <typename T, typename = void>
@@ -255,6 +279,12 @@ public:
         if (!empty()) {
             destroy_value();
             m_dist_from_ideal_bucket = EMPTY_MARKER_DIST_FROM_IDEAL_BUCKET;
+            // For trivially destructible values (the common pointer-keyed
+            // case) destroy_value() leaves the pointer bytes behind; on a
+            // conservatively scanned GC heap those stale words would keep the
+            // pointees alive for as long as the bucket stays empty.
+            std::memset(static_cast<void*>(std::addressof(m_value)), 0,
+                        sizeof(m_value));
         }
     }
 
@@ -412,9 +442,19 @@ private:
    * parameter or store the hash because it doesn't cost us anything in size and
    * can be used to speed up rehash.
    */
-    static constexpr bool STORE_HASH = StoreHash || ((sizeof(tsl::detail_robin_hash::bucket_entry<value_type, true>) == sizeof(tsl::detail_robin_hash::bucket_entry<value_type, false>)) && (sizeof(std::size_t) == sizeof(truncated_hash_type) || is_power_of_two_policy<GrowthPolicy>::value) &&
+    static constexpr bool STORE_HASH = (StoreHash || ((sizeof(tsl::detail_robin_hash::bucket_entry<value_type, true>) == sizeof(tsl::detail_robin_hash::bucket_entry<value_type, false>)) && (sizeof(std::size_t) == sizeof(truncated_hash_type) || is_power_of_two_policy<GrowthPolicy>::value) &&
                                                      // Don't store the hash for primitive types with default hash.
-                                                     (!std::is_arithmetic<key_type>::value || !std::is_same<Hash, std::hash<key_type>>::value));
+                                                     (!std::is_arithmetic<key_type>::value || !std::is_same<Hash, std::hash<key_type>>::value))) &&
+                                       /**
+                                        * Never store the hash when the buckets live on the conservatively
+                                        * scanned GC heap: the stored hash is 32 truncated bits placed in the
+                                        * first word of the bucket, and for an occupied bucket whose
+                                        * dist_from_ideal_bucket() is 0 that word is exactly the raw hash
+                                        * value. A conservative collector cannot tell it apart from a heap
+                                        * pointer, so random hash values pin arbitrary heap objects (up to
+                                        * entire disposed documents) for the lifetime of the table.
+                                        */
+                                       !tsl::detail_robin_hash::is_gc_scanned_allocator<Allocator>::value;
 
     /**
    * Only use the stored hash on lookup if we are explicitly asked. We are not
