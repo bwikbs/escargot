@@ -3310,6 +3310,9 @@ public:
     static int clearByteCodeBlockFromDisclaimGC(void* obj);
     static void clearByteCodeBlock(void* obj, void* cd);
 
+    // Drops every reference this block holds; see the definition.
+    void detachFromCodeBlock();
+
     void* operator new(size_t size);
     void* operator new[](size_t size) = delete;
 

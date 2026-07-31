@@ -768,6 +768,9 @@ public:
     // remove regexp cache,
     // and compress every comressible strings(if enabled) if we can
     void enterIdleMode();
+    // Drops every compiled byte code block. Only safe when this VM instance is
+    // about to be discarded.
+    void releaseAllByteCodeBlocks();
     // force clear every caches related with context
     // you can call this function if you don't want to use every alive contexts
     void clearCachesRelatedWithContext();

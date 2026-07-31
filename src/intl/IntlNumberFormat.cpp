@@ -310,19 +310,6 @@ struct IntlNumberFormatData {
     Optional<UNumberRangeFormatter*> numberRangeFormatter;
 };
 
-static void intlNumberFormatClear(void* obj, void* cd)
-{
-    Object* self = reinterpret_cast<Object*>(obj);
-    if (self->extraData()) {
-        auto ud = reinterpret_cast<IntlNumberFormatData*>(self->extraData());
-        unumf_close(ud->numberFormatter);
-        if (ud->numberRangeFormatter) {
-            unumrf_close(ud->numberRangeFormatter.value());
-        }
-        delete ud;
-    }
-}
-
 void IntlNumberFormat::initialize(ExecutionState& state, Object* numberFormat, Value locales, Value options)
 {
 #if defined(ENABLE_RUNTIME_ICU_BINDER)
@@ -340,8 +327,23 @@ void IntlNumberFormat::initialize(ExecutionState& state, Object* numberFormat, V
     }
 
     // Set the [[initializedIntlObject]] internal property of dateTimeFormat to true.
-    constexpr static GC_finalizer_closure fData = { intlNumberFormatClear, nullptr };
-    numberFormat->setInternalSlot(new (GC_finalized_malloc(sizeof(Object), &fData)) Object(state, Object::PrototypeIsNull));
+    // The internal slot object must not come from the finalized kind: that kind
+    // is marked unconditionally, so the slot - and with it the Intl object's
+    // whole Context - would stay reachable forever. Release the ICU handles
+    // from a regular finalizer instead.
+    numberFormat->setInternalSlot(new Object(state, Object::PrototypeIsNull));
+    numberFormat->internalSlot()->addFinalizer([](PointerValue* self, void* data) {
+        Object* slot = self->asObject();
+        if (slot->extraData()) {
+            auto ud = reinterpret_cast<IntlNumberFormatData*>(slot->extraData());
+            unumf_close(ud->numberFormatter);
+            if (ud->numberRangeFormatter) {
+                unumrf_close(ud->numberRangeFormatter.value());
+            }
+            delete ud;
+        }
+    },
+                                               nullptr);
     numberFormat->internalSlot()->defineOwnProperty(state, ObjectPropertyName(state, initializedIntlObject), ObjectPropertyDescriptor(Value(true)));
 
     // Let requestedLocales be the result of calling the

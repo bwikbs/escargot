@@ -132,6 +132,13 @@ public:
     }
 
     void enterIdleMode();
+    // Disconnects every compiled ByteCodeBlock from its InterpretedCodeBlock and
+    // collects. ByteCodeBlockKind is registered with
+    // GC_register_disclaim_proc(..., mark_from_all = 1), so a block is marked
+    // whether or not anything references it and keeps its Context - and
+    // everything the Context reaches - alive. Only safe when this VM is about to
+    // be discarded.
+    void releaseAllByteCodeBlocks();
     void clearCachesRelatedWithContext();
 
     const GlobalSymbols& globalSymbols()

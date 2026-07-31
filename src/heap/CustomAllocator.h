@@ -82,6 +82,9 @@ typedef std::function<void(ExecutionState& state, void* obj)> HeapObjectIterator
  */
 void iterateSpecificKindOfObject(ExecutionState& state, HeapObjectKind kind, HeapObjectIteratorCallback callback);
 
+// Same as above, but for callers that have no ExecutionState at hand.
+void iterateSpecificKindOfObject(HeapObjectKind kind, const std::function<void(void*)>& callback);
+
 template <class GC_Tp>
 class CustomAllocator {
 public:

@@ -115,6 +115,10 @@ ByteCodeBlock::ByteCodeBlock()
 void ByteCodeBlock::clearByteCodeBlock(void* obj, void* cd)
 {
     ByteCodeBlock* self = (ByteCodeBlock*)obj;
+    if (!self->m_codeBlock) {
+        // already detached by releaseAllByteCodeBlocks()
+        return;
+    }
     // accessing m_codeBlock here is safe since this kind is registered with
     // mark-unconditionally, which keeps referents of dying blocks alive
     // (in debugger builds the finalizer mechanism gives the same guarantee)
@@ -140,6 +144,40 @@ void ByteCodeBlock::clearByteCodeBlock(void* obj, void* cd)
         ASSERT(vm->compiledByteCodeSize() >= accountedByteCodeSize);
         vm->compiledByteCodeSize() -= accountedByteCodeSize;
     }
+}
+
+void ByteCodeBlock::detachFromCodeBlock()
+{
+    // Drop everything this block refers to. The block itself stays alive until
+    // the collector sweeps it - ByteCodeBlockKind is marked unconditionally -
+    // so leaving m_codeBlock set would keep the code block, its Context and the
+    // whole VM instance reachable.
+    InterpretedCodeBlock* codeBlock = m_codeBlock;
+    if (!codeBlock) {
+        return;
+    }
+
+    VMInstance* vm = codeBlock->context()->vmInstance();
+    if (!vm->isFinalized()) {
+        if (codeBlock->byteCodeBlock() == this) {
+            codeBlock->setByteCodeBlock(nullptr);
+        }
+        size_t accounted = m_isAccounted ? m_code.size() : 0;
+        ASSERT(vm->compiledByteCodeSize() >= accounted);
+        vm->compiledByteCodeSize() -= accounted;
+        m_isAccounted = false;
+    }
+
+    m_code.clear();
+    m_numeralLiteralData.clear();
+    m_jumpFlowRecordData.clear();
+    // These two vectors exist only to keep literals alive. Since this kind is
+    // marked unconditionally they act as roots, so they have to be dropped as
+    // well - otherwise every string literal of the released script (and through
+    // String::m_vmInstance, the whole VM instance) stays reachable.
+    m_stringLiteralData.clear();
+    m_otherLiteralData.clear();
+    m_codeBlock = nullptr;
 }
 
 int ByteCodeBlock::clearByteCodeBlockFromDisclaimGC(void* obj)
