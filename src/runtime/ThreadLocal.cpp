@@ -248,29 +248,46 @@ static void genericGCEventListener(GC_EventType evtType)
 }
 
 #if defined(ENABLE_TLS_ACCESS_BY_PTHREAD_KEY)
-Optional<size_t*> checkPthreadKey(pthread_key_t key, char* tlsBase)
-{
 #if defined(ESCARGOT_32)
-    pthread_setspecific(key, (void*)(0xbeefdead));
+#define ESCARGOT_PTHREAD_KEY_CHECK_MAGIC ((size_t)0xbeefdead)
 #else
-    pthread_setspecific(key, (void*)(0xbeefdeaddeadbeefull));
+#define ESCARGOT_PTHREAD_KEY_CHECK_MAGIC ((size_t)0xbeefdeaddeadbeefull)
 #endif
-    size_t* ptr = reinterpret_cast<size_t*>(tlsBase);
-    size_t* tcbMayEnd = reinterpret_cast<size_t*>(tlsBase + getpagesize());
 
-    while (ptr < tcbMayEnd) {
-#if defined(ESCARGOT_32)
-        if (*ptr == 0xbeefdead) {
-#else
-        if (*ptr == 0xbeefdeaddeadbeefull) {
-#endif
-            pthread_setspecific(key, nullptr);
+static size_t* scanForPthreadKeyMagic(char* lo, char* hi)
+{
+    size_t* ptr = reinterpret_cast<size_t*>(lo);
+    while (ptr < reinterpret_cast<size_t*>(hi)) {
+        if (*ptr == ESCARGOT_PTHREAD_KEY_CHECK_MAGIC) {
             return ptr;
         }
         ptr++;
     }
-    pthread_setspecific(key, nullptr);
     return nullptr;
+}
+
+Optional<size_t*> checkPthreadKey(pthread_key_t key, char* tlsBase)
+{
+    pthread_setspecific(key, (void*)ESCARGOT_PTHREAD_KEY_CHECK_MAGIC);
+
+    // TLS_TCB_AT_TP libcs (glibc x86/x86_64): struct pthread starts at the
+    // thread pointer, so the specific_1stblock slot is at a positive offset.
+    size_t* ptr = scanForPthreadKeyMagic(tlsBase, tlsBase + getpagesize());
+
+    // TLS_DTV_AT_TP libcs (glibc arm/aarch64/riscv...): struct pthread sits
+    // immediately BELOW the thread pointer, so the slot is at a small
+    // negative offset and the forward scan can never find it. The offset is
+    // still identical for every thread (fixed struct layout), which is all
+    // this fixed-offset mechanism needs.
+    if (!ptr) {
+        ptr = scanForPthreadKeyMagic(tlsBase - getpagesize(), tlsBase);
+    }
+
+    pthread_setspecific(key, nullptr);
+    if (!ptr) {
+        return nullptr;
+    }
+    return ptr;
 }
 #endif
 
@@ -340,8 +357,12 @@ void ThreadLocal::initialize(uint32_t optionFromGlobal)
         auto ptr = checkPthreadKey(g_stackLimitKey, baseAddr);
         ESCARGOT_RELEASE_ASSERT(ptr);
 
+        // The offset is negative on TLS_DTV_AT_TP libcs (glibc arm/aarch64):
+        // struct pthread -- and the key slot inside it -- sits below the
+        // thread pointer. g_stackLimitKeyOffset is signed for this reason.
         g_stackLimitKeyOffset = reinterpret_cast<size_t>(ptr.value()) - reinterpret_cast<size_t>(baseAddr);
-        ESCARGOT_RELEASE_ASSERT(g_stackLimitKeyOffset < getpagesize());
+        long keyOffset = g_stackLimitKeyOffset;
+        ESCARGOT_RELEASE_ASSERT((keyOffset < 0 ? -keyOffset : keyOffset) < getpagesize());
     }
     size_t** ptr = reinterpret_cast<size_t**>(tlsBaseAddress() + g_stackLimitKeyOffset);
     *ptr = &g_stackLimit;
