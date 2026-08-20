@@ -33,16 +33,14 @@
 
 namespace Escargot {
 
-static void temporalPlainDateClear(void* obj, void* cd)
-{
-    TemporalPlainDateObject* self = reinterpret_cast<TemporalPlainDateObject*>(obj);
-    self->clearNativeResources();
-}
-
 void* TemporalPlainDateObject::operator new(size_t size)
 {
-    constexpr static GC_finalizer_closure data = { temporalPlainDateClear, nullptr };
-    return GC_finalized_malloc(size, &data);
+    // Allocating from the finalized kind would turn every instance into a GC
+    // root - that kind is marked unconditionally - which keeps the object's
+    // prototype chain, and through it the whole Context, reachable long after
+    // the page that created it is gone. A regular finalizer releases the
+    // native resources without pinning anything.
+    return GC_MALLOC(size);
 }
 
 void TemporalPlainDateObject::clearNativeResources()
@@ -62,6 +60,10 @@ TemporalPlainDateObject::TemporalPlainDateObject(ExecutionState& state, Object* 
     , m_plainDate(new(PointerFreeGC) ISO8601::PlainDate(isoDate))
     , m_calendarID(calendar)
 {
+    addFinalizer([](PointerValue* self, void* data) {
+        static_cast<TemporalPlainDateObject*>(self->asObject())->clearNativeResources();
+    },
+                 nullptr);
     if (checkBoundery && !ISO8601::isoDateTimeWithinLimits(isoDate.year(), isoDate.month(), isoDate.day())) {
         ErrorObject::throwBuiltinError(state, ErrorCode::RangeError, "Out of range date");
     }
@@ -89,6 +91,10 @@ TemporalPlainDateObject::TemporalPlainDateObject(ExecutionState& state, Object* 
     , m_calendarID(calendar)
     , m_icuCalendar(fieldResolveResult.first)
 {
+    addFinalizer([](PointerValue* self, void* data) {
+        static_cast<TemporalPlainDateObject*>(self->asObject())->clearNativeResources();
+    },
+                 nullptr);
     if (fieldResolveResult.second) {
         *m_plainDate = fieldResolveResult.second.value();
     } else {
@@ -117,6 +123,10 @@ TemporalPlainDateObject::TemporalPlainDateObject(ExecutionState& state, Object* 
     , m_calendarID(calendar)
     , m_icuCalendar(icuCalendar)
 {
+    addFinalizer([](PointerValue* self, void* data) {
+        static_cast<TemporalPlainDateObject*>(self->asObject())->clearNativeResources();
+    },
+                 nullptr);
     UErrorCode status = U_ZERO_ERROR;
 
     auto y = calendar.year(state, m_icuCalendar);

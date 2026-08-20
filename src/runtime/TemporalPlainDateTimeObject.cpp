@@ -53,16 +53,14 @@
 
 namespace Escargot {
 
-static void temporalPlainDateTimeClear(void* obj, void* cd)
-{
-    TemporalPlainDateTimeObject* self = reinterpret_cast<TemporalPlainDateTimeObject*>(obj);
-    self->clearNativeResources();
-}
-
 void* TemporalPlainDateTimeObject::operator new(size_t size)
 {
-    constexpr static GC_finalizer_closure data = { temporalPlainDateTimeClear, nullptr };
-    return GC_finalized_malloc(size, &data);
+    // Allocating from the finalized kind would turn every instance into a GC
+    // root - that kind is marked unconditionally - which keeps the object's
+    // prototype chain, and through it the whole Context, reachable long after
+    // the page that created it is gone. A regular finalizer releases the
+    // native resources without pinning anything.
+    return GC_MALLOC(size);
 }
 
 void TemporalPlainDateTimeObject::clearNativeResources()
@@ -82,6 +80,10 @@ TemporalPlainDateTimeObject::TemporalPlainDateTimeObject(ExecutionState& state, 
     , m_plainDateTime(new(PointerFreeGC) ISO8601::PlainDateTime(isoDate, plainTime))
     , m_calendarID(calendar)
 {
+    addFinalizer([](PointerValue* self, void* data) {
+        static_cast<TemporalPlainDateTimeObject*>(self->asObject())->clearNativeResources();
+    },
+                 nullptr);
     if (!ISO8601::isDateTimeWithinLimits(isoDate.year(), isoDate.month(), isoDate.day(),
                                          plainTime.hour(), plainTime.minute(), plainTime.second(), plainTime.microsecond(), plainTime.microsecond(), plainTime.nanosecond())) {
         ErrorObject::throwBuiltinError(state, ErrorCode::RangeError, "Invalid date-time");
@@ -119,6 +121,10 @@ TemporalPlainDateTimeObject::TemporalPlainDateTimeObject(ExecutionState& state, 
     , m_calendarID(calendar)
     , m_icuCalendar(icuCalendar)
 {
+    addFinalizer([](PointerValue* self, void* data) {
+        static_cast<TemporalPlainDateTimeObject*>(self->asObject())->clearNativeResources();
+    },
+                 nullptr);
     ASSERT(underMicrosecondValue < 1000 * 1000);
     UErrorCode status = U_ZERO_ERROR;
 

@@ -507,16 +507,14 @@ static String* icuFieldTypeToPartName(ExecutionState& state, int32_t fieldName)
     }
 }
 
-void intlDateTimeFormatClear(void* obj, void* cd)
-{
-    IntlDateTimeFormatObject* self = reinterpret_cast<IntlDateTimeFormatObject*>(obj);
-    self->clearNativeResources();
-}
-
 void* IntlDateTimeFormatObject::operator new(size_t size)
 {
-    constexpr static GC_finalizer_closure data = { intlDateTimeFormatClear, nullptr };
-    return GC_finalized_malloc(size, &data);
+    // Allocating from the finalized kind would turn every instance into a GC
+    // root - that kind is marked unconditionally - which keeps the object's
+    // prototype chain, and through it the whole Context, reachable long after
+    // the page that created it is gone. A regular finalizer releases the
+    // native resources without pinning anything.
+    return GC_MALLOC(size);
 }
 
 void IntlDateTimeFormatObject::clearNativeResources()
@@ -545,6 +543,10 @@ IntlDateTimeFormatObject::IntlDateTimeFormatObject(ExecutionState& state, Object
     , m_timeZoneICU(String::emptyString())
     , m_icuDateFormat(nullptr)
 {
+    addFinalizer([](PointerValue* self, void* data) {
+        static_cast<IntlDateTimeFormatObject*>(self->asObject())->clearNativeResources();
+    },
+                 nullptr);
     // Let requestedLocales be ? CanonicalizeLocaleList(locales).
     ValueVector requestedLocales = Intl::canonicalizeLocaleList(state, locales);
     auto toDateTimeOptionsResult = toDateTimeOptions(state, options, state.context()->staticStrings().lazyAny().string(), state.context()->staticStrings().lazyDate().string());
