@@ -30,16 +30,14 @@
 
 namespace Escargot {
 
-static void temporalZonedDateTimeClear(void* obj, void* cd)
-{
-    TemporalZonedDateTimeObject* self = reinterpret_cast<TemporalZonedDateTimeObject*>(obj);
-    self->clearNativeResources();
-}
-
 void* TemporalZonedDateTimeObject::operator new(size_t size)
 {
-    constexpr static GC_finalizer_closure data = { temporalZonedDateTimeClear, nullptr };
-    return GC_finalized_malloc(size, &data);
+    // Allocating from the finalized kind would turn every instance into a GC
+    // root - that kind is marked unconditionally - which keeps the object's
+    // prototype chain, and through it the whole Context, reachable long after
+    // the page that created it is gone. A regular finalizer releases the
+    // native resources without pinning anything.
+    return GC_MALLOC(size);
 }
 
 void TemporalZonedDateTimeObject::clearNativeResources()
@@ -135,6 +133,10 @@ TemporalZonedDateTimeObject::TemporalZonedDateTimeObject(ExecutionState& state, 
     , m_calendarID(calendar)
     , m_icuCalendar(nullptr)
 {
+    addFinalizer([](PointerValue* self, void* data) {
+        static_cast<TemporalZonedDateTimeObject*>(self->asObject())->clearNativeResources();
+    },
+                 nullptr);
     ComputedTimeZone computedTimeZone;
     if (timeZone.hasTimeZoneName()) {
         Int128 timezoneAppliedEpoch = Temporal::getEpochNanosecondsFor(state, timeZone, epochNanoseconds, TemporalDisambiguationOption::Compatible);
@@ -156,6 +158,10 @@ TemporalZonedDateTimeObject::TemporalZonedDateTimeObject(ExecutionState& state, 
     , m_calendarID(calendar)
     , m_icuCalendar(nullptr)
 {
+    addFinalizer([](PointerValue* self, void* data) {
+        static_cast<TemporalZonedDateTimeObject*>(self->asObject())->clearNativeResources();
+    },
+                 nullptr);
     init(state, timeZone);
 }
 
