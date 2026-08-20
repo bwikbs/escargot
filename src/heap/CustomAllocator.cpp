@@ -383,6 +383,33 @@ void initializeCustomAllocators()
 #endif
 }
 
+void iterateSpecificKindOfObject(HeapObjectKind kind, const std::function<void(void*)>& callback)
+{
+    struct IteratorData {
+        int kind;
+        const std::function<void(void*)>& callback;
+    };
+
+    IteratorData data{ s_gcKinds[kind], callback };
+
+    ASSERT(!GC_is_disabled());
+    GC_enumerate_reachable_objects_inner([](void* obj, size_t bytes, void* cd) {
+        size_t size;
+        int kind = GC_get_kind_and_size(obj, &size);
+        ASSERT(size == bytes);
+
+        IteratorData* data = (IteratorData*)cd;
+        if (kind == data->kind) {
+#if defined(NDEBUG)
+            data->callback(obj);
+#else
+            data->callback(GC_USR_PTR_FROM_BASE(obj));
+#endif
+        }
+    },
+                                         (void*)(&data));
+}
+
 void iterateSpecificKindOfObject(ExecutionState& state, HeapObjectKind kind, HeapObjectIteratorCallback callback)
 {
     struct HeapObjectIteratorData {
