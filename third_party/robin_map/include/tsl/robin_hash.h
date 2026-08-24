@@ -412,9 +412,12 @@ private:
    * parameter or store the hash because it doesn't cost us anything in size and
    * can be used to speed up rehash.
    */
-    static constexpr bool STORE_HASH = StoreHash || ((sizeof(tsl::detail_robin_hash::bucket_entry<value_type, true>) == sizeof(tsl::detail_robin_hash::bucket_entry<value_type, false>)) && (sizeof(std::size_t) == sizeof(truncated_hash_type) || is_power_of_two_policy<GrowthPolicy>::value) &&
-                                                     // Don't store the hash for primitive types with default hash.
-                                                     (!std::is_arithmetic<key_type>::value || !std::is_same<Hash, std::hash<key_type>>::value));
+    // Escargot: never auto-enable the stored hash. Bucket arrays are often
+    // allocated from the conservatively scanned GC heap, and the truncated
+    // 32-bit hash stored at bucket offset 0 looks like a heap pointer to the
+    // collector, creating false roots. The stored hash only sped up rehash
+    // (USE_STORED_HASH_ON_LOOKUP is false unless explicitly requested).
+    static constexpr bool STORE_HASH = StoreHash;
 
     /**
    * Only use the stored hash on lookup if we are explicitly asked. We are not
