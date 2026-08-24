@@ -30,6 +30,7 @@
 #endif
 
 namespace Escargot {
+class DateObject;
 
 class VMInstance;
 class ScriptParser;
@@ -314,6 +315,12 @@ public:
         return m_regexpLegacyFeatures;
     }
 
+    // Scratch DateObject used by the local-time getters. It lives in the
+    // Context (not the VMInstance) so that it dies together with the realm
+    // that created it: a VM-wide cache would keep the first realm that
+    // called a Date getter alive for the whole lifetime of the VM.
+    DateObject* cachedUTC(ExecutionState& state);
+
     InstantiatedFunctionObjects& instantiatedFunctionObjects()
     {
         return m_instantiatedFunctionObjects;
@@ -386,6 +393,7 @@ private:
     // For non-standard, read-only properties of RegExp
     // contains the result of the last matched regular expressions
     RegExpLegacyFeatures m_regexpLegacyFeatures;
+    DateObject* m_cachedUTC;
 
     InstantiatedFunctionObjects m_instantiatedFunctionObjects;
 

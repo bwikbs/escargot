@@ -560,7 +560,6 @@ private:
 #endif
     void ensureTzname();
     std::string m_tzname[2];
-    DateObject* m_cachedUTC;
 
     // job queue
     JobQueue* m_jobQueue;
