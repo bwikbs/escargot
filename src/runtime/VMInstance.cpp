@@ -184,7 +184,6 @@ void* VMInstance::operator new(size_t size)
         GC_set_bit(desc, GC_WORD_OFFSET(VMInstance, m_toStringRecursionPreventer));
         GC_set_bit(desc, GC_WORD_OFFSET(VMInstance, m_regexpCache));
         GC_set_bit(desc, GC_WORD_OFFSET(VMInstance, m_regexpOptionStringCache));
-        GC_set_bit(desc, GC_WORD_OFFSET(VMInstance, m_cachedUTC));
         GC_set_bit(desc, GC_WORD_OFFSET(VMInstance, m_jobQueue));
 #if defined(ENABLE_INTL)
         GC_set_bit(desc, GC_WORD_OFFSET(VMInstance, m_intlAvailableLocales));
@@ -381,7 +380,6 @@ VMInstance::VMInstance(const char* locale, const char* timezone, const char* bas
 #ifdef ENABLE_ICU
     , m_calendar(nullptr)
 #endif
-    , m_cachedUTC(nullptr)
     , m_jobQueue(nullptr)
 #if defined(ENABLE_CODE_CACHE)
     , m_codeCache(nullptr)
@@ -691,12 +689,8 @@ void VMInstance::ensureTzname()
 
 DateObject* VMInstance::cachedUTC(ExecutionState& state)
 {
-    if (m_cachedUTC == nullptr) {
-        DateObject* obj = new DateObject(state);
-        obj->setPrototype(state, Value(Value::Null));
-        m_cachedUTC = obj;
-    }
-    return m_cachedUTC;
+    // owned by the Context so it cannot outlive its realm
+    return state.context()->cachedUTC(state);
 }
 
 void VMInstance::addObjectStructureToRootSet(ObjectStructure* structure)
@@ -781,10 +775,9 @@ void VMInstance::clearCachesRelatedWithContext()
 {
     m_regexpCache->clear();
     globalSymbolRegistry().clear();
-    // These two outlive every Context created in this VM, so anything they
-    // still hold keeps that Context - and, for an embedder, the document that
-    // owns it - reachable for the rest of the VM's life.
-    m_cachedUTC = nullptr;
+    // This outlives every Context created in this VM, so anything it still
+    // holds keeps that Context - and, for an embedder, the document that owns
+    // it - reachable for the rest of the VM's life.
     m_rootedObjectStructure.clear();
 #if defined(ENABLE_CODE_CACHE)
     // CodeCache should be cleared here because CodeCache holds a lock of cache directory

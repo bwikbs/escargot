@@ -24,6 +24,7 @@
 #include "VMInstance.h"
 #include "GlobalObject.h"
 #include "StringObject.h"
+#include "DateObject.h"
 #include "parser/ScriptParser.h"
 #include "ObjectStructure.h"
 #include "Environment.h"
@@ -89,6 +90,7 @@ Context::Context(VMInstance* instance)
     , m_debugger(nullptr)
     , m_stoppingOnExceptionInProgress(false)
 #endif /* ESCARGOT_DEBUGGER */
+    , m_cachedUTC(nullptr)
 {
     ExecutionState stateForInit(this);
     m_globalObjectProxy = m_globalObject = new GlobalObject(stateForInit);
@@ -262,4 +264,14 @@ GlobalVariableAccessCacheItem* Context::ensureGlobalVariableAccessCacheSlot(Atom
 
     return iter->second;
 }
+DateObject* Context::cachedUTC(ExecutionState& state)
+{
+    if (m_cachedUTC == nullptr) {
+        DateObject* obj = new DateObject(state);
+        obj->setPrototype(state, Value(Value::Null));
+        m_cachedUTC = obj;
+    }
+    return m_cachedUTC;
+}
+
 } // namespace Escargot
